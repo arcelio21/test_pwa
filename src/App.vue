@@ -1,10 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import ConnectionStatus from "./components/ConnectionStatus.vue";
 import NotificationTester from "./components/NotificationTester.vue";
 import RecordForm from "./components/RecordForm.vue";
 import RecordList from "./components/RecordList.vue";
-import SyncPanel from "./components/SyncPanel.vue";
 import { nowIso } from "./utils/dateUtils";
 import {
   addRecord,
@@ -21,14 +19,21 @@ const editingRecord = ref(null);
 const isSyncing = ref(false);
 const syncMessage = ref("");
 const isOnline = ref(navigator.onLine);
-const isConnectionSimulated = ref(false);
 const pwaUpdateAvailable = ref(false);
 const pwaOfflineReady = ref(false);
 const updateServiceWorker = ref(null);
+const activeTab = ref("home");
+const showSplash = ref(true);
 
 const activeRecords = computed(() =>
   [...records.value].sort((a, b) => new Date(b.actualizadoEn) - new Date(a.actualizadoEn))
 );
+const stats = computed(() => ({
+  total: records.value.length,
+  pending: records.value.filter((record) => record.syncStatus === "pendiente").length,
+  synced: records.value.filter((record) => record.syncStatus === "sincronizado").length,
+  approved: records.value.filter((record) => record.estado === "aprobado").length
+}));
 
 async function loadRecords() {
   records.value = await getRecords();
@@ -144,23 +149,6 @@ async function handleSync() {
 }
 
 function updateBrowserConnectionStatus() {
-  if (!isConnectionSimulated.value) {
-    isOnline.value = navigator.onLine;
-  }
-}
-
-function simulateOffline() {
-  isConnectionSimulated.value = true;
-  isOnline.value = false;
-}
-
-function simulateOnline() {
-  isConnectionSimulated.value = true;
-  isOnline.value = true;
-}
-
-function useBrowserStatus() {
-  isConnectionSimulated.value = false;
   isOnline.value = navigator.onLine;
 }
 
@@ -181,6 +169,9 @@ onMounted(async () => {
   await initializeRecordStorage();
   await loadRecords();
   await approveFromQueryParam();
+  window.setTimeout(() => {
+    showSplash.value = false;
+  }, 1200);
   window.addEventListener("online", updateBrowserConnectionStatus);
   window.addEventListener("offline", updateBrowserConnectionStatus);
   window.addEventListener("pwa-update-available", handlePwaUpdate);
@@ -198,16 +189,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="app-shell">
-    <header class="app-header">
-      <div>
-        <p class="eyebrow">Vue 3 + Vite + Workbox</p>
-        <h1>Demo Offline First</h1>
-        <p>
-          CRUD local con sincronizacion simulada hacia Supabase y soporte PWA instalable.
-        </p>
+  <div v-if="showSplash" class="splash-screen">
+    <img src="/icons/icon-192.png" alt="Offline Demo" width="92" height="92" />
+    <h1>Offline Demo</h1>
+    <p>Preparando datos locales</p>
+  </div>
+
+  <main class="mobile-shell">
+    <header class="mobile-topbar">
+      <button :class="['connection-chip', isOnline ? 'online' : 'offline']" type="button">
+        {{ isOnline ? "Conectado" : "Sin conexion" }}
+      </button>
+      <div class="app-mark">
+        <img src="/icons/icon-192.png" alt="" width="34" height="34" />
+        <span>Offline Demo</span>
       </div>
-      <img src="/icons/icon-192.png" alt="Icono Offline Demo" width="72" height="72" />
     </header>
 
     <div v-if="pwaUpdateAvailable" class="update-banner">
@@ -219,16 +215,44 @@ onUnmounted(() => {
       La app esta lista para cargar recursos basicos sin conexion despues de esta visita.
     </div>
 
-    <ConnectionStatus
-      :is-online="isOnline"
-      :is-simulated="isConnectionSimulated"
-      @simulate-offline="simulateOffline"
-      @simulate-online="simulateOnline"
-      @use-browser-status="useBrowserStatus"
-    />
+    <section v-if="activeTab === 'home'" class="screen-stack">
+      <section class="home-hero">
+        <p class="eyebrow">PWA offline-first</p>
+        <h1>Gestiona registros locales y prueba aprobaciones desde notificaciones.</h1>
+      </section>
 
-    <section class="content-grid">
-      <div class="main-column">
+      <section class="quick-stats">
+        <article>
+          <span>{{ stats.total }}</span>
+          <p>Todos</p>
+        </article>
+        <article>
+          <span>{{ stats.pending }}</span>
+          <p>Pendientes</p>
+        </article>
+        <article>
+          <span>{{ stats.approved }}</span>
+          <p>Aprobados</p>
+        </article>
+      </section>
+
+      <NotificationTester :records="records" />
+
+      <section class="panel info-panel">
+        <p class="eyebrow">Almacenamiento</p>
+        <h2>IndexedDB + Service Worker</h2>
+        <p>
+          Los registros viven en IndexedDB para que la app y el Service Worker puedan aprobar en
+          segundo plano desde la notificacion.
+        </p>
+      </section>
+    </section>
+
+    <section v-if="activeTab === 'todos'" class="screen-stack">
+      <div class="screen-title">
+        <p class="eyebrow">Registros</p>
+        <h1>Todos</h1>
+      </div>
         <RecordForm
           :editing-record="editingRecord"
           @save="handleSaveRecord"
@@ -239,30 +263,50 @@ onUnmounted(() => {
           @edit="handleEditRecord"
           @delete="handleDeleteRecord"
         />
+    </section>
+
+    <section v-if="activeTab === 'profile'" class="screen-stack">
+      <div class="profile-card">
+        <img src="/icons/icon-192.png" alt="" width="76" height="76" />
+        <h1>Perfil demo</h1>
+        <p>Entorno local para probar PWA, notificaciones e IndexedDB sin backend real.</p>
       </div>
 
-      <aside class="side-column">
-        <SyncPanel
-          :records="records"
-          :is-online="isOnline"
-          :is-syncing="isSyncing"
-          :message="syncMessage"
-          @sync="handleSync"
-        />
-        <NotificationTester :records="records" />
-        <section class="panel info-panel">
-          <p class="eyebrow">Notas tecnicas</p>
-          <h2>Cache y datos</h2>
-          <p>
-            El Service Worker cachea archivos de la app. Los registros de esta demo viven en
-            IndexedDB para que Vue y el Service Worker puedan compartirlos.
-          </p>
-          <p>
-            En produccion, los Service Workers requieren HTTPS. GitHub Pages ya sirve los sitios
-            con HTTPS y localhost funciona para desarrollo.
-          </p>
-        </section>
-      </aside>
+      <section class="panel profile-list">
+        <div>
+          <span>Total de registros</span>
+          <strong>{{ stats.total }}</strong>
+        </div>
+        <div>
+          <span>Pendientes</span>
+          <strong>{{ stats.pending }}</strong>
+        </div>
+        <div>
+          <span>Sincronizados</span>
+          <strong>{{ stats.synced }}</strong>
+        </div>
+        <div>
+          <span>Estado</span>
+          <strong>{{ isOnline ? "Online" : "Offline" }}</strong>
+        </div>
+      </section>
+
+      <p v-if="syncMessage" class="sync-message">{{ syncMessage }}</p>
     </section>
+
+    <nav class="bottom-nav" aria-label="Navegacion principal">
+      <button :class="{ active: activeTab === 'home' }" type="button" @click="activeTab = 'home'">
+        <span>H</span>
+        Home
+      </button>
+      <button :class="{ active: activeTab === 'todos' }" type="button" @click="activeTab = 'todos'">
+        <span>T</span>
+        Todos
+      </button>
+      <button :class="{ active: activeTab === 'profile' }" type="button" @click="activeTab = 'profile'">
+        <span>P</span>
+        Profile
+      </button>
+    </nav>
   </main>
 </template>
