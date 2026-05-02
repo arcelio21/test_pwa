@@ -29,7 +29,7 @@ function syncLabel(record) {
   <section class="panel record-list-panel" aria-label="Lista de registros">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Datos guardados en localStorage</p>
+        <p class="eyebrow">Datos guardados en IndexedDB</p>
         <h2>Lista de registros</h2>
       </div>
       <span class="counter">{{ records.length }} total</span>

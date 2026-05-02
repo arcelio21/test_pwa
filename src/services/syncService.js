@@ -1,8 +1,8 @@
 import { fakeSyncRecords } from "./fakeSupabaseService";
-import { getRecords, saveRecords, removeDeletedSyncedRecords } from "./localStorageService";
+import { getRecords, saveRecords, removeDeletedSyncedRecords } from "./indexedDbService";
 
 export async function syncPendingRecords() {
-  const records = getRecords();
+  const records = await getRecords();
   const pendingRecords = records.filter((record) => record.syncStatus === "pendiente");
 
   if (pendingRecords.length === 0) {
@@ -17,8 +17,8 @@ export async function syncPendingRecords() {
   const syncedById = new Map(syncedRecords.map((record) => [record.id, record]));
 
   const nextRecords = records.map((record) => syncedById.get(record.id) || record);
-  saveRecords(nextRecords);
-  const cleanedRecords = removeDeletedSyncedRecords();
+  await saveRecords(nextRecords);
+  const cleanedRecords = await removeDeletedSyncedRecords();
 
   return {
     records: cleanedRecords,

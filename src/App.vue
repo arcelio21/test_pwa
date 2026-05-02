@@ -10,9 +10,10 @@ import {
   addRecord,
   approveRecord,
   getRecords,
+  initializeRecordStorage,
   markRecordAsDeleted,
   updateRecord
-} from "./services/localStorageService";
+} from "./services/indexedDbService";
 import { syncPendingRecords } from "./services/syncService";
 
 const records = ref([]);
@@ -29,8 +30,8 @@ const activeRecords = computed(() =>
   [...records.value].sort((a, b) => new Date(b.actualizadoEn) - new Date(a.actualizadoEn))
 );
 
-function loadRecords() {
-  records.value = getRecords();
+async function loadRecords() {
+  records.value = await getRecords();
 }
 
 function createRecordId() {
@@ -41,7 +42,7 @@ function createRecordId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function handleSaveRecord(payload) {
+async function handleSaveRecord(payload) {
   const timestamp = nowIso();
 
   if (editingRecord.value) {
@@ -53,10 +54,10 @@ function handleSaveRecord(payload) {
       syncStatus: "pendiente"
     };
 
-    updateRecord(updatedRecord);
+    await updateRecord(updatedRecord);
     editingRecord.value = null;
     syncMessage.value = "Cambios guardados localmente. Pendiente de sincronizar.";
-    loadRecords();
+    await loadRecords();
     return;
   }
 
@@ -70,9 +71,9 @@ function handleSaveRecord(payload) {
     syncStatus: "pendiente"
   };
 
-  addRecord(record);
+  await addRecord(record);
   syncMessage.value = "Registro creado localmente. Pendiente de sincronizar.";
-  loadRecords();
+  await loadRecords();
 }
 
 function handleEditRecord(record) {
@@ -80,16 +81,16 @@ function handleEditRecord(record) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function handleDeleteRecord(id) {
-  markRecordAsDeleted(id, nowIso());
+async function handleDeleteRecord(id) {
+  await markRecordAsDeleted(id, nowIso());
   if (editingRecord.value?.id === id) {
     editingRecord.value = null;
   }
   syncMessage.value = "Registro marcado como eliminado. Pendiente de sincronizar.";
-  loadRecords();
+  await loadRecords();
 }
 
-function aprobarRegistro(registroId) {
+async function aprobarRegistro(registroId) {
   const record = records.value.find((currentRecord) => currentRecord.id === registroId);
 
   if (!record || record.estado === "eliminado") {
@@ -97,24 +98,29 @@ function aprobarRegistro(registroId) {
     return;
   }
 
-  approveRecord(registroId, nowIso());
+  await approveRecord(registroId, nowIso());
   syncMessage.value = "Registro aprobado. Pendiente de sincronizar.";
-  loadRecords();
+  await loadRecords();
 }
 
 function handleServiceWorkerMessage(event) {
   if (event.data?.type === "APPROVE_REQUEST_FROM_NOTIFICATION") {
     aprobarRegistro(event.data.registroId);
   }
+
+  if (event.data?.type === "RECORD_APPROVED_IN_BACKGROUND") {
+    syncMessage.value = "Registro aprobado desde la notificacion. Pendiente de sincronizar.";
+    loadRecords();
+  }
 }
 
-function approveFromQueryParam() {
+async function approveFromQueryParam() {
   const url = new URL(window.location.href);
   const registroId = url.searchParams.get("approve");
 
   if (!registroId) return;
 
-  aprobarRegistro(registroId);
+  await aprobarRegistro(registroId);
   url.searchParams.delete("approve");
   window.history.replaceState({}, "", url);
 }
@@ -171,9 +177,10 @@ function refreshPwa() {
   updateServiceWorker.value?.(true);
 }
 
-onMounted(() => {
-  loadRecords();
-  approveFromQueryParam();
+onMounted(async () => {
+  await initializeRecordStorage();
+  await loadRecords();
+  await approveFromQueryParam();
   window.addEventListener("online", updateBrowserConnectionStatus);
   window.addEventListener("offline", updateBrowserConnectionStatus);
   window.addEventListener("pwa-update-available", handlePwaUpdate);
@@ -248,7 +255,7 @@ onUnmounted(() => {
           <h2>Cache y datos</h2>
           <p>
             El Service Worker cachea archivos de la app. Los registros de esta demo viven en
-            localStorage para que persistan al recargar.
+            IndexedDB para que Vue y el Service Worker puedan compartirlos.
           </p>
           <p>
             En produccion, los Service Workers requieren HTTPS. GitHub Pages ya sirve los sitios
