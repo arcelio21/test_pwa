@@ -44,7 +44,7 @@ function syncLabel(record) {
       <li
         v-for="record in records"
         :key="record.id"
-        :class="['record-card', { deleted: record.estado === 'eliminado' }]"
+        :class="['record-card', { deleted: record.estado === 'eliminado', approved: record.estado === 'aprobado' }]"
       >
         <div class="record-card-main">
           <div>

@@ -44,6 +44,7 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         clientsClaim: true,
+        importScripts: ["notification-actions.js"],
         skipWaiting: false,
         runtimeCaching: [
           {

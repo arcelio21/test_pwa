@@ -47,6 +47,21 @@ export function markRecordAsDeleted(id, updatedAt) {
   return saveRecords(nextRecords);
 }
 
+export function approveRecord(id, updatedAt) {
+  const nextRecords = getRecords().map((record) =>
+    record.id === id && record.estado !== "eliminado"
+      ? {
+          ...record,
+          estado: "aprobado",
+          actualizadoEn: updatedAt,
+          syncStatus: "pendiente"
+        }
+      : record
+  );
+
+  return saveRecords(nextRecords);
+}
+
 export function removeDeletedSyncedRecords() {
   const nextRecords = getRecords().filter(
     (record) =>

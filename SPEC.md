@@ -24,7 +24,7 @@ Crear una PWA de demostracion en Vue 3 que funcione offline-first para registros
   id: "string",
   titulo: "string",
   descripcion: "string",
-  estado: "activo" | "eliminado",
+  estado: "activo" | "aprobado" | "eliminado",
   creadoEn: "string",
   actualizadoEn: "string",
   syncStatus: "pendiente" | "sincronizado" | "error"
@@ -35,6 +35,7 @@ Crear una PWA de demostracion en Vue 3 que funcione offline-first para registros
 
 - Solo se sincronizan registros con `syncStatus = "pendiente"`.
 - Si `estado = "activo"`, se simula una subida a Supabase.
+- Si `estado = "aprobado"`, se simula una subida a Supabase con el cambio pendiente.
 - Si `estado = "eliminado"`, se simula una eliminacion en Supabase.
 - Cada operacion tarda aproximadamente 1 segundo por registro.
 - Si la sincronizacion es correcta, el registro activo pasa a `sincronizado`.

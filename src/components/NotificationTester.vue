@@ -1,15 +1,29 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-const delaySeconds = 60;
+const delaySeconds = 15;
 const scheduledNotificationKey = "offline-demo-scheduled-notification-at";
+const props = defineProps({
+  records: {
+    type: Array,
+    required: true
+  }
+});
+
 const countdown = ref(0);
 const message = ref("");
+const selectedRegistroId = ref("");
 const visualNotification = ref("");
 let timeoutId = null;
 let intervalId = null;
 
 const isScheduled = computed(() => countdown.value > 0);
+const approvalCandidates = computed(() =>
+  props.records.filter((record) => record.estado !== "eliminado")
+);
+const selectedRecord = computed(() =>
+  approvalCandidates.value.find((record) => record.id === selectedRegistroId.value)
+);
 
 function clearTimers() {
   if (timeoutId) {
@@ -39,8 +53,29 @@ async function requestNotificationPermission() {
   return Notification.permission;
 }
 
-async function showNotification() {
-  const body = "Test de notificacion: esta es una notificacion simulada de la app.";
+function getAppUrl() {
+  const appUrl = new URL(window.location.pathname, window.location.origin);
+  appUrl.search = "";
+  appUrl.hash = "";
+  return appUrl.href;
+}
+
+function readScheduledNotification() {
+  try {
+    const storedValue = localStorage.getItem(scheduledNotificationKey);
+    return storedValue ? JSON.parse(storedValue) : null;
+  } catch (error) {
+    console.warn("No se pudo leer la notificacion programada", error);
+    return null;
+  }
+}
+
+async function showNotification(registroId) {
+  const record = props.records.find((currentRecord) => currentRecord.id === registroId);
+  const body = record
+    ? `Test de notificacion: aprobar "${record.titulo}".`
+    : "Test de notificacion: esta es una notificacion simulada de la app.";
+
   countdown.value = 0;
   message.value = "Notificacion de prueba ejecutada.";
   visualNotification.value = body;
@@ -52,6 +87,16 @@ async function showNotification() {
     if (permission === "granted") {
       const options = {
         body,
+        actions: [
+          {
+            action: "aprobar",
+            title: "Aprobar"
+          }
+        ],
+        data: {
+          registroId,
+          url: getAppUrl()
+        },
         icon: "./icons/icon-192.png",
         badge: "./icons/icon-192.png",
         tag: "offline-demo-test",
@@ -78,12 +123,12 @@ async function showNotification() {
   }
 }
 
-function scheduleTimers(targetTime) {
+function scheduleTimers(targetTime, registroId) {
   clearTimers();
   const remainingSeconds = Math.max(0, Math.ceil((targetTime - Date.now()) / 1000));
 
   if (remainingSeconds === 0) {
-    showNotification();
+    showNotification(registroId);
     return;
   }
 
@@ -95,42 +140,66 @@ function scheduleTimers(targetTime) {
 
     if (nextRemainingSeconds === 0) {
       clearTimers();
-      showNotification();
+      showNotification(registroId);
     }
   }, 1000);
 
   timeoutId = window.setTimeout(() => {
     clearTimers();
-    showNotification();
+    showNotification(registroId);
   }, remainingSeconds * 1000);
 }
 
 async function scheduleNotification() {
+  if (!selectedRegistroId.value) {
+    message.value = "Crea o selecciona un registro antes de programar la notificacion.";
+    return;
+  }
+
   visualNotification.value = "";
 
   const permission = await requestNotificationPermission();
   const targetTime = Date.now() + delaySeconds * 1000;
-  localStorage.setItem(scheduledNotificationKey, String(targetTime));
+  localStorage.setItem(
+    scheduledNotificationKey,
+    JSON.stringify({
+      targetTime,
+      registroId: selectedRegistroId.value
+    })
+  );
 
   if (permission === "granted") {
-    message.value = "Notificacion programada para dentro de 1 minuto. Puedes dejar la pestana en segundo plano.";
+    message.value = "Notificacion programada para dentro de 15 segundos. Puedes dejar la pestana en segundo plano.";
   } else if (permission === "denied") {
-    message.value = "Notificacion programada para dentro de 1 minuto. El navegador bloqueo permisos, se mostrara aviso visual.";
+    message.value = "Notificacion programada para dentro de 15 segundos. El navegador bloqueo permisos, se mostrara aviso visual.";
   } else {
-    message.value = "Notificacion programada para dentro de 1 minuto. Este navegador no soporta Notification API.";
+    message.value = "Notificacion programada para dentro de 15 segundos. Este navegador no soporta Notification API.";
   }
 
-  scheduleTimers(targetTime);
+  scheduleTimers(targetTime, selectedRegistroId.value);
 }
 
+watch(
+  approvalCandidates,
+  (records) => {
+    if (!records.some((record) => record.id === selectedRegistroId.value)) {
+      selectedRegistroId.value = records[0]?.id || "";
+    }
+  },
+  { immediate: true }
+);
+
 onMounted(() => {
-  const storedTargetTime = Number(localStorage.getItem(scheduledNotificationKey));
+  const scheduledNotification = readScheduledNotification();
+  const storedTargetTime = Number(scheduledNotification?.targetTime);
+  const storedRegistroId = scheduledNotification?.registroId;
 
   if (storedTargetTime && storedTargetTime > Date.now()) {
     message.value = "Hay una notificacion pendiente programada.";
-    scheduleTimers(storedTargetTime);
+    selectedRegistroId.value = storedRegistroId || selectedRegistroId.value;
+    scheduleTimers(storedTargetTime, storedRegistroId);
   } else if (storedTargetTime) {
-    showNotification();
+    showNotification(storedRegistroId);
   }
 });
 
@@ -152,7 +221,26 @@ onBeforeUnmount(clearTimers);
       una PWA sin backend no puede ejecutar el temporizador hasta que vuelvas a abrirla.
     </p>
 
-    <button type="button" class="full-width" :disabled="isScheduled" @click="scheduleNotification">
+    <label class="select-label">
+      Registro para aprobar
+      <select v-model="selectedRegistroId" :disabled="isScheduled || approvalCandidates.length === 0">
+        <option value="" disabled>Selecciona un registro</option>
+        <option
+          v-for="record in approvalCandidates"
+          :key="record.id"
+          :value="record.id"
+        >
+          {{ record.titulo }} - {{ record.estado }}
+        </option>
+      </select>
+    </label>
+
+    <button
+      type="button"
+      class="full-width"
+      :disabled="isScheduled || !selectedRecord"
+      @click="scheduleNotification"
+    >
       Programar notificacion de prueba
     </button>
 

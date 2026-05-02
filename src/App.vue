@@ -8,6 +8,7 @@ import SyncPanel from "./components/SyncPanel.vue";
 import { nowIso } from "./utils/dateUtils";
 import {
   addRecord,
+  approveRecord,
   getRecords,
   markRecordAsDeleted,
   updateRecord
@@ -88,6 +89,36 @@ function handleDeleteRecord(id) {
   loadRecords();
 }
 
+function aprobarRegistro(registroId) {
+  const record = records.value.find((currentRecord) => currentRecord.id === registroId);
+
+  if (!record || record.estado === "eliminado") {
+    syncMessage.value = "No se pudo aprobar el registro solicitado.";
+    return;
+  }
+
+  approveRecord(registroId, nowIso());
+  syncMessage.value = "Registro aprobado. Pendiente de sincronizar.";
+  loadRecords();
+}
+
+function handleServiceWorkerMessage(event) {
+  if (event.data?.type === "APPROVE_REQUEST_FROM_NOTIFICATION") {
+    aprobarRegistro(event.data.registroId);
+  }
+}
+
+function approveFromQueryParam() {
+  const url = new URL(window.location.href);
+  const registroId = url.searchParams.get("approve");
+
+  if (!registroId) return;
+
+  aprobarRegistro(registroId);
+  url.searchParams.delete("approve");
+  window.history.replaceState({}, "", url);
+}
+
 async function handleSync() {
   if (!isOnline.value || isSyncing.value) return;
 
@@ -142,10 +173,12 @@ function refreshPwa() {
 
 onMounted(() => {
   loadRecords();
+  approveFromQueryParam();
   window.addEventListener("online", updateBrowserConnectionStatus);
   window.addEventListener("offline", updateBrowserConnectionStatus);
   window.addEventListener("pwa-update-available", handlePwaUpdate);
   window.addEventListener("pwa-offline-ready", handlePwaOfflineReady);
+  navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
 });
 
 onUnmounted(() => {
@@ -153,6 +186,7 @@ onUnmounted(() => {
   window.removeEventListener("offline", updateBrowserConnectionStatus);
   window.removeEventListener("pwa-update-available", handlePwaUpdate);
   window.removeEventListener("pwa-offline-ready", handlePwaOfflineReady);
+  navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
 });
 </script>
 
@@ -208,7 +242,7 @@ onUnmounted(() => {
           :message="syncMessage"
           @sync="handleSync"
         />
-        <NotificationTester />
+        <NotificationTester :records="records" />
         <section class="panel info-panel">
           <p class="eyebrow">Notas tecnicas</p>
           <h2>Cache y datos</h2>
